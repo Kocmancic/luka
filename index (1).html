@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Delivery Scanner</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:#f2f4f7; color:#1b1f24; }
+  header { background:#1f4e79; color:#fff; padding:12px 16px; font-weight:600; }
+  nav { display:flex; background:#fff; border-bottom:1px solid #d5d9de; }
+  nav button { flex:1; padding:14px; border:0; background:none; font-size:16px; border-bottom:3px solid transparent; }
+  nav button.active { border-bottom-color:#1f4e79; color:#1f4e79; font-weight:600; }
+  section { display:none; padding:14px; }
+  section.active { display:block; }
+  .card { background:#fff; border-radius:10px; padding:12px; margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  button.btn { width:100%; padding:14px; font-size:16px; border:0; border-radius:8px; background:#1f4e79; color:#fff; margin-top:8px; }
+  button.btn.secondary { background:#6b7785; }
+  button.btn.danger { background:#b3261e; }
+  input[type=text], select { width:100%; padding:12px; font-size:15px; border:1px solid #c5cbd3; border-radius:8px; }
+  #reader { width:100%; border-radius:8px; overflow:hidden; }
+  #result { border-radius:12px; padding:22px 14px; text-align:center; background:#e6e9ee; min-height:150px;
+            display:flex; flex-direction:column; justify-content:center; transition:background .15s; }
+  #result.ok { background:#2e9e4f; color:#fff; }
+  #result.bad { background:#d32f2f; color:#fff; }
+  #result .big { font-size:30px; font-weight:700; word-break:break-word; }
+  #result .mid { font-size:20px; margin-top:8px; word-break:break-word; }
+  #result .small { font-size:14px; opacity:.9; margin-top:8px; }
+  .row { display:flex; align-items:center; padding:10px 6px; border-bottom:1px solid #eceff3; gap:10px; }
+  .row .info { flex:1; min-width:0; }
+  .row .tour { font-weight:600; word-break:break-word; }
+  .row .cust { font-size:14px; color:#3d4650; word-break:break-word; }
+  .row .num { font-size:12px; color:#6b7785; }
+  .row .st { font-size:20px; }
+  .row.done { background:#e8f5ec; }
+  #status { font-size:14px; color:#4a5560; margin-top:6px; }
+  .count { font-weight:600; margin-bottom:8px; }
+  .filters { display:flex; gap:8px; margin-top:8px; }
+  .filters select { flex:1; }
+</style>
+</head>
+<body>
+<header>Delivery Scanner</header>
+<nav>
+  <button id="tab-scan" class="active">Scan</button>
+  <button id="tab-list">List</button>
+  <button id="tab-file">File</button>
+</nav>
+
+<section id="scan" class="active">
+  <div id="result"><div class="big">Load a file first</div><div class="small">Go to the File tab</div></div>
+  <button class="btn" id="startBtn">Start scanner</button>
+  <button class="btn secondary" id="stopBtn" style="display:none">Stop scanner</button>
+  <div class="card" style="margin-top:12px"><div id="reader"></div></div>
+</section>
+
+<section id="list">
+  <div class="card">
+    <div class="count" id="count"></div>
+    <input type="text" id="filter" placeholder="Search delivery note, tour or customer...">
+    <div class="filters">
+      <select id="showFilter">
+        <option value="all">Show: all</option>
+        <option value="todo">Show: not scanned</option>
+        <option value="done">Show: scanned</option>
+      </select>
+    </div>
+  </div>
+  <div class="card" id="rows"></div>
+  <button class="btn danger" id="resetBtn">Reset scanned status</button>
+</section>
+
+<section id="file">
+  <div class="card">
+    <b>Option A: local Excel file</b>
+    <p style="font-size:13px;margin:6px 0">The sheet "Obelezavanje robe" is used (or the 5th sheet). Columns: Primalac (customer), Napomena 2 (tour), Otpremnica (barcode).</p>
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none">
+    <button class="btn" id="pickBtn">Select Excel file</button>
+  </div>
+  <div class="card">
+    <b>Option B: Excel file in OneDrive / SharePoint</b>
+    <p style="font-size:13px;margin:6px 0">Paste the sharing link of the file (set to "Anyone with the link can view", if your company allows it).</p>
+    <input type="text" id="urlInput" placeholder="https://...sharepoint.com/...">
+    <button class="btn" id="loadUrlBtn">Load from link</button>
+    <button class="btn secondary" id="refreshBtn">Refresh from saved link</button>
+  </div>
+  <div id="status"></div>
+</section>
+
+<script>
+// ---------- settings: which sheet / columns ----------
+const SHEET_NAME = "Obelezavanje robe";   // used if it exists, otherwise the 5th sheet
+const SHEET_INDEX = 4;                    // 0-based -> 5th sheet
+// header names searched in the sheet (lowercase). Fallback = column letters F / E / B
+const HDR = { note: "otpremnica", tour: "napomena 2", cust: "primalac" };
+const FALLBACK = { note: 5, tour: 4, cust: 1 };   // F, E, B (0-based)
+
+// ---------- state ----------
+let orders = [];            // {num, tour, cust, koleta}
+let byNum = new Map();      // lookup
+let scanned = {};           // num -> true
+let scanner = null;
+let lastCode = "", lastTime = 0;
+
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+};
+const clean = v => (v === null || v === undefined) ? "" : String(v).trim();
+
+// ---------- tabs ----------
+["scan","list","file"].forEach(t => {
+  $("tab-"+t).onclick = () => {
+    document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll("section").forEach(s => s.classList.remove("active"));
+    $("tab-"+t).classList.add("active"); $(t).classList.add("active");
+    if (t === "list") renderList();
+    if (t !== "scan") stopScanner();
+  };
+});
+
+// ---------- sound / vibration ----------
+let audioCtx;
+function beep(ok) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    g.gain.value = 0.3;
+    if (ok) { o.type = "sine"; o.frequency.value = 1000; o.start(); o.stop(audioCtx.currentTime + 0.15); }
+    else { o.type = "sawtooth"; o.frequency.value = 160; o.start(); o.stop(audioCtx.currentTime + 0.7); }
+  } catch(e) {}
+  try { navigator.vibrate && navigator.vibrate(ok ? 80 : [200,100,200]); } catch(e){}
+}
+
+// ---------- key normalisation ----------
+// Excel keeps only 15 significant digits, so very long numbers can end in zeros.
+// For such codes we also match on the first 15 digits.
+function keyOf(code) {
+  const c = clean(code);
+  return (/^\d{16,}$/.test(c)) ? c.slice(0, 15) : c;
+}
+
+// ---------- parse rows (array of arrays) ----------
+function parseRows(rows) {
+  // find header row (contains "otpremnica")
+  let h = rows.findIndex(r => r.some(c => clean(c).toLowerCase() === HDR.note));
+  let col = Object.assign({}, FALLBACK);
+  let start = 4; // row 5 in Excel
+  if (h >= 0) {
+    const low = rows[h].map(c => clean(c).toLowerCase());
+    ["note","tour","cust"].forEach(k => { const i = low.indexOf(HDR[k]); if (i >= 0) col[k] = i; });
+    start = h + 1;
+  }
+  const out = [];
+  for (let i = start; i < rows.length; i++) {
+    const r = rows[i];
+    const num = clean(r[col.note]);
+    if (!num) continue;                              // skips blank rows and "Grand Total"
+    const kol = parseInt(r[6], 10);
+    out.push({ num, tour: clean(r[col.tour]), cust: clean(r[col.cust]), koleta: isNaN(kol) ? 1 : kol });
+  }
+  return { list: out, usedHeader: h >= 0 };
+}
+
+function setOrders(list) {
+  orders = list;
+  byNum = new Map();
+  orders.forEach(o => { byNum.set(o.num, o); const k = keyOf(o.num); if (!byNum.has(k)) byNum.set(k, o); });
+  scanned = store.get("scanned", {});
+  const valid = new Set(orders.map(o => o.num));
+  Object.keys(scanned).forEach(k => { if (!valid.has(k)) delete scanned[k]; });
+  store.set("scanned", scanned);
+}
+
+function loadWorkbook(data) {
+  const wb = XLSX.read(data, { type: "array" });
+  let name = wb.SheetNames.includes(SHEET_NAME) ? SHEET_NAME : wb.SheetNames[SHEET_INDEX];
+  if (!name) throw new Error("Sheet not found (needs at least 5 sheets or a sheet named '" + SHEET_NAME + "').");
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", raw: true });
+  const res = parseRows(rows);
+  if (!res.list.length) throw new Error("No delivery notes found in sheet '" + name + "'.");
+  setOrders(res.list);
+  setResult("", "Ready", orders.length + " delivery notes loaded");
+  $("status").textContent = "Loaded " + orders.length + " delivery notes from sheet '" + name + "'" +
+    (res.usedHeader ? "." : " (header not found, used columns F/E/B).");
+}
+
+$("pickBtn").onclick = () => $("fileInput").click();
+$("fileInput").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { loadWorkbook(new Uint8Array(await f.arrayBuffer())); store.set("src", "file"); }
+  catch(err) { $("status").textContent = "Error: " + err.message; }
+};
+
+async function loadFromUrl(url) {
+  $("status").textContent = "Downloading...";
+  try {
+    let u = url.trim();
+    if (!/[?&]download=1/.test(u)) u += (u.includes("?") ? "&" : "?") + "download=1";
+    const res = await fetch(u);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    loadWorkbook(new Uint8Array(await res.arrayBuffer()));
+    store.set("url", url.trim());
+  } catch(err) {
+    $("status").textContent = "Could not load link: " + err.message +
+      ". (If this happens in a browser it is usually CORS; in the Android app it works if the link allows anonymous access.)";
+  }
+}
+$("loadUrlBtn").onclick = () => { const u = $("urlInput").value; if (u) loadFromUrl(u); };
+$("refreshBtn").onclick = () => { const u = store.get("url", ""); if (u) loadFromUrl(u); else $("status").textContent = "No saved link yet."; };
+$("urlInput").value = store.get("url", "");
+
+// ---------- scanning ----------
+function setResult(cls, big, mid, small) {
+  const r = $("result");
+  r.className = cls;
+  r.innerHTML = '<div class="big"></div><div class="mid"></div><div class="small"></div>';
+  r.querySelector(".big").textContent = big;
+  r.querySelector(".mid").textContent = mid || "";
+  r.querySelector(".small").textContent = small || "";
+}
+
+function onCode(code) {
+  code = clean(code);
+  const now = Date.now();
+  if (code === lastCode && now - lastTime < 1500) return;
+  lastCode = code; lastTime = now;
+  if (!orders.length) { setResult("bad", "No file loaded", "Go to the File tab"); beep(false); return; }
+  const o = byNum.get(code) || byNum.get(keyOf(code));
+  if (o) {
+    const again = scanned[o.num];
+    scanned[o.num] = true; store.set("scanned", scanned);
+    const extra = [];
+    if (o.koleta > 1) extra.push("Koleta: " + o.koleta);
+    if (again) extra.push("already scanned");
+    setResult("ok", o.tour || "(no tour)", o.cust, o.num + (extra.length ? "  |  " + extra.join("  |  ") : ""));
+    beep(true);
+  } else {
+    setResult("bad", "NOT IN FILE", "", "Code: " + code);
+    beep(false);
+  }
+}
+
+async function startScanner() {
+  if (scanner) return;
+  scanner = new Html5Qrcode("reader", { experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
+  try {
+    await scanner.start({ facingMode: "environment" },
+      { fps: 10, qrbox: { width: 300, height: 140 } }, onCode, () => {});
+    $("startBtn").style.display = "none"; $("stopBtn").style.display = "block";
+  } catch(e) {
+    scanner = null;
+    setResult("bad", "Camera error", String(e));
+  }
+}
+async function stopScanner() {
+  if (!scanner) return;
+  try { await scanner.stop(); scanner.clear(); } catch(e) {}
+  scanner = null;
+  $("startBtn").style.display = "block"; $("stopBtn").style.display = "none";
+}
+$("startBtn").onclick = startScanner;
+$("stopBtn").onclick = stopScanner;
+
+// ---------- list ----------
+function renderList() {
+  const q = $("filter").value.toLowerCase();
+  const show = $("showFilter").value;
+  const done = orders.filter(o => scanned[o.num]).length;
+  $("count").textContent = "Scanned " + done + " / " + orders.length;
+  const box = $("rows"); box.innerHTML = "";
+  orders
+    .filter(o => show === "all" || (show === "done") === !!scanned[o.num])
+    .filter(o => !q || (o.num + " " + o.tour + " " + o.cust).toLowerCase().includes(q))
+    .forEach(o => {
+      const d = document.createElement("div");
+      d.className = "row" + (scanned[o.num] ? " done" : "");
+      d.innerHTML = '<div class="info"><div class="tour"></div><div class="cust"></div><div class="num"></div></div><span class="st"></span>';
+      d.querySelector(".tour").textContent = o.tour;
+      d.querySelector(".cust").textContent = o.cust;
+      d.querySelector(".num").textContent = o.num + (o.koleta > 1 ? "  |  Koleta: " + o.koleta : "");
+      d.querySelector(".st").textContent = scanned[o.num] ? "✅" : "⬜";
+      box.appendChild(d);
+    });
+}
+$("filter").oninput = renderList;
+$("showFilter").onchange = renderList;
+$("resetBtn").onclick = () => {
+  if (confirm("Reset all scanned status?")) { scanned = {}; store.set("scanned", scanned); renderList(); }
+};
+</script>
+</body>
+</html>

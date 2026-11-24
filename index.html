@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="sr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Delivery Scanner</title>
+<title>Skener otpremnica</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
@@ -11,7 +11,7 @@
   body { margin:0; font-family: system-ui, sans-serif; background:#f2f4f7; color:#1b1f24; }
   header { background:#1f4e79; color:#fff; padding:12px 16px; font-weight:600; }
   nav { display:flex; background:#fff; border-bottom:1px solid #d5d9de; }
-  nav button { flex:1; padding:14px; border:0; background:none; font-size:16px; border-bottom:3px solid transparent; }
+  nav button { flex:1; padding:14px 4px; border:0; background:none; font-size:15px; border-bottom:3px solid transparent; }
   nav button.active { border-bottom-color:#1f4e79; color:#1f4e79; font-weight:600; }
   section { display:none; padding:14px; }
   section.active { display:block; }
@@ -25,82 +25,97 @@
             display:flex; flex-direction:column; justify-content:center; transition:background .15s; }
   #result.ok { background:#2e9e4f; color:#fff; }
   #result.bad { background:#d32f2f; color:#fff; }
-  #result .big { font-size:30px; font-weight:700; word-break:break-word; }
+  #result .big { font-size:34px; font-weight:700; word-break:break-word; }
   #result .mid { font-size:20px; margin-top:8px; word-break:break-word; }
   #result .small { font-size:14px; opacity:.9; margin-top:8px; }
   .row { display:flex; align-items:center; padding:10px 6px; border-bottom:1px solid #eceff3; gap:10px; }
   .row .info { flex:1; min-width:0; }
   .row .tour { font-weight:600; word-break:break-word; }
   .row .cust { font-size:14px; color:#3d4650; word-break:break-word; }
-  .row .num { font-size:12px; color:#6b7785; }
+  .row .num { font-size:12px; color:#6b7785; word-break:break-word; }
   .row .st { font-size:20px; }
   .row.done { background:#e8f5ec; }
+  .row.unk { background:#fdecea; }
   #status { font-size:14px; color:#4a5560; margin-top:6px; }
   .count { font-weight:600; margin-bottom:8px; }
   .filters { display:flex; gap:8px; margin-top:8px; }
   .filters select { flex:1; }
+  .muted { font-size:13px; color:#4a5560; margin:6px 0; }
 </style>
 </head>
 <body>
-<header>Delivery Scanner</header>
+<header>Skener otpremnica</header>
 <nav>
-  <button id="tab-scan" class="active">Scan</button>
-  <button id="tab-list">List</button>
-  <button id="tab-file">File</button>
+  <button id="tab-scan" class="active">Skeniraj</button>
+  <button id="tab-list">Lista</button>
+  <button id="tab-file">Fajl</button>
+  <button id="tab-unk">Nepoznato</button>
 </nav>
 
 <section id="scan" class="active">
-  <div id="result"><div class="big">Load a file first</div><div class="small">Go to the File tab</div></div>
-  <button class="btn" id="startBtn">Start scanner</button>
-  <button class="btn secondary" id="stopBtn" style="display:none">Stop scanner</button>
+  <div id="result"><div class="big">Prvo učitajte fajl</div><div class="small">Idite na karticu Fajl</div></div>
+  <button class="btn" id="startBtn">Pokreni skener</button>
+  <button class="btn secondary" id="stopBtn" style="display:none">Zaustavi skener</button>
   <div class="card" style="margin-top:12px"><div id="reader"></div></div>
 </section>
 
 <section id="list">
   <div class="card">
     <div class="count" id="count"></div>
-    <input type="text" id="filter" placeholder="Search delivery note, tour or customer...">
+    <input type="text" id="filter" placeholder="Pretraga: otpremnica, tura ili primalac...">
     <div class="filters">
       <select id="showFilter">
-        <option value="all">Show: all</option>
-        <option value="todo">Show: not scanned</option>
-        <option value="done">Show: scanned</option>
+        <option value="all">Prikaži: sve</option>
+        <option value="todo">Prikaži: neskenirano</option>
+        <option value="done">Prikaži: skenirano</option>
       </select>
     </div>
   </div>
   <div class="card" id="rows"></div>
-  <button class="btn danger" id="resetBtn">Reset scanned status</button>
+  <button class="btn danger" id="resetBtn">Resetuj skenirano</button>
 </section>
 
 <section id="file">
   <div class="card">
-    <b>Option A: local Excel file</b>
-    <p style="font-size:13px;margin:6px 0">The sheet "Obelezavanje robe" is used (or the 5th sheet). Columns: Primalac (customer), Napomena 2 (tour), Otpremnica (barcode).</p>
+    <b>Opcija A: lokalni Excel fajl</b>
+    <p class="muted">Koristi se list "Obelezavanje robe" (ili 5. list). Kolone: Primalac, Broj ture, Otpremnica (barkod).</p>
     <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none">
-    <button class="btn" id="pickBtn">Select Excel file</button>
+    <button class="btn" id="pickBtn">Izaberi Excel fajl</button>
   </div>
   <div class="card">
-    <b>Option B: Excel file in OneDrive / SharePoint</b>
-    <p style="font-size:13px;margin:6px 0">Paste the sharing link of the file (set to "Anyone with the link can view", if your company allows it).</p>
+    <b>Opcija B: Excel fajl na OneDrive / SharePoint</b>
+    <p class="muted">Nalepite link za deljenje fajla (podešen na "Svako ko ima link može da gleda", ako to vaša firma dozvoljava).</p>
     <input type="text" id="urlInput" placeholder="https://...sharepoint.com/...">
-    <button class="btn" id="loadUrlBtn">Load from link</button>
-    <button class="btn secondary" id="refreshBtn">Refresh from saved link</button>
+    <button class="btn" id="loadUrlBtn">Učitaj sa linka</button>
+    <button class="btn secondary" id="refreshBtn">Osveži sa sačuvanog linka</button>
   </div>
   <div id="status"></div>
 </section>
 
-<script>
-// ---------- settings: which sheet / columns ----------
-const SHEET_NAME = "Obelezavanje robe";   // used if it exists, otherwise the 5th sheet
-const SHEET_INDEX = 4;                    // 0-based -> 5th sheet
-// header names searched in the sheet (lowercase). Fallback = column letters F / E / B
-const HDR = { note: "otpremnica", tour: "napomena 2", cust: "primalac" };
-const FALLBACK = { note: 5, tour: 4, cust: 1 };   // F, E, B (0-based)
+<section id="unk">
+  <div class="card">
+    <div class="count" id="unkCount"></div>
+    <p class="muted">Ovde se čuvaju svi skenirani barkodovi koji nisu u fajlu. Lista ostaje sačuvana na telefonu.</p>
+    <button class="btn" id="copyBtn">Kopiraj listu</button>
+    <button class="btn secondary" id="csvBtn">Preuzmi CSV</button>
+  </div>
+  <div class="card" id="unkRows"></div>
+  <button class="btn danger" id="unkClearBtn">Obriši listu nepoznatih</button>
+</section>
 
-// ---------- state ----------
+<script>
+// ---------- podešavanja: koji list / koje kolone ----------
+const SHEET_NAME = "Obelezavanje robe";   // koristi se ako postoji, inače 5. list
+const SHEET_INDEX = 4;                    // 0-based -> 5. list
+// nazivi zaglavlja (mala slova). Rezervno: kolone F / C / B
+const HDR = { note: "otpremnica", tour: "broj ture", cust: "primalac" };
+const FALLBACK = { note: 5, tour: 2, cust: 1 };   // F, C, B (0-based)
+
+// ---------- stanje ----------
 let orders = [];            // {num, tour, cust, koleta}
-let byNum = new Map();      // lookup
+let byNum = new Map();
 let scanned = {};           // num -> true
+let unknown = [];           // {code, count, first, last}
 let scanner = null;
 let lastCode = "", lastTime = 0;
 
@@ -110,19 +125,25 @@ const store = {
   set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
 };
 const clean = v => (v === null || v === undefined) ? "" : String(v).trim();
+const nowStr = () => {
+  const d = new Date(), p = n => String(n).padStart(2, "0");
+  return p(d.getDate()) + "." + p(d.getMonth()+1) + "." + d.getFullYear() + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+};
+unknown = store.get("unknown", []);
 
-// ---------- tabs ----------
-["scan","list","file"].forEach(t => {
+// ---------- kartice ----------
+["scan","list","file","unk"].forEach(t => {
   $("tab-"+t).onclick = () => {
     document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
     document.querySelectorAll("section").forEach(s => s.classList.remove("active"));
     $("tab-"+t).classList.add("active"); $(t).classList.add("active");
     if (t === "list") renderList();
+    if (t === "unk") renderUnknown();
     if (t !== "scan") stopScanner();
   };
 });
 
-// ---------- sound / vibration ----------
+// ---------- zvuk / vibracija ----------
 let audioCtx;
 function beep(ok) {
   try {
@@ -136,20 +157,19 @@ function beep(ok) {
   try { navigator.vibrate && navigator.vibrate(ok ? 80 : [200,100,200]); } catch(e){}
 }
 
-// ---------- key normalisation ----------
-// Excel keeps only 15 significant digits, so very long numbers can end in zeros.
-// For such codes we also match on the first 15 digits.
+// ---------- normalizacija ključa ----------
+// Excel čuva samo 15 značajnih cifara, pa dugački brojevi mogu da se završavaju nulama.
+// Za takve kodove poredimo i prvih 15 cifara.
 function keyOf(code) {
   const c = clean(code);
   return (/^\d{16,}$/.test(c)) ? c.slice(0, 15) : c;
 }
 
-// ---------- parse rows (array of arrays) ----------
+// ---------- parsiranje redova ----------
 function parseRows(rows) {
-  // find header row (contains "otpremnica")
   let h = rows.findIndex(r => r.some(c => clean(c).toLowerCase() === HDR.note));
   let col = Object.assign({}, FALLBACK);
-  let start = 4; // row 5 in Excel
+  let start = 4; // red 5 u Excelu
   if (h >= 0) {
     const low = rows[h].map(c => clean(c).toLowerCase());
     ["note","tour","cust"].forEach(k => { const i = low.indexOf(HDR[k]); if (i >= 0) col[k] = i; });
@@ -159,7 +179,7 @@ function parseRows(rows) {
   for (let i = start; i < rows.length; i++) {
     const r = rows[i];
     const num = clean(r[col.note]);
-    if (!num) continue;                              // skips blank rows and "Grand Total"
+    if (!num) continue;                              // preskače prazne redove i "Grand Total"
     const kol = parseInt(r[6], 10);
     out.push({ num, tour: clean(r[col.tour]), cust: clean(r[col.cust]), koleta: isNaN(kol) ? 1 : kol });
   }
@@ -179,25 +199,25 @@ function setOrders(list) {
 function loadWorkbook(data) {
   const wb = XLSX.read(data, { type: "array" });
   let name = wb.SheetNames.includes(SHEET_NAME) ? SHEET_NAME : wb.SheetNames[SHEET_INDEX];
-  if (!name) throw new Error("Sheet not found (needs at least 5 sheets or a sheet named '" + SHEET_NAME + "').");
+  if (!name) throw new Error("List nije pronađen (potrebno je bar 5 listova ili list sa nazivom '" + SHEET_NAME + "').");
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", raw: true });
   const res = parseRows(rows);
-  if (!res.list.length) throw new Error("No delivery notes found in sheet '" + name + "'.");
+  if (!res.list.length) throw new Error("Nema otpremnica na listu '" + name + "'.");
   setOrders(res.list);
-  setResult("", "Ready", orders.length + " delivery notes loaded");
-  $("status").textContent = "Loaded " + orders.length + " delivery notes from sheet '" + name + "'" +
-    (res.usedHeader ? "." : " (header not found, used columns F/E/B).");
+  setResult("", "Spremno", "Učitano otpremnica: " + orders.length);
+  $("status").textContent = "Učitano otpremnica: " + orders.length + " (list '" + name + "')" +
+    (res.usedHeader ? "." : " (zaglavlje nije pronađeno, korišćene kolone F/C/B).");
 }
 
 $("pickBtn").onclick = () => $("fileInput").click();
 $("fileInput").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   try { loadWorkbook(new Uint8Array(await f.arrayBuffer())); store.set("src", "file"); }
-  catch(err) { $("status").textContent = "Error: " + err.message; }
+  catch(err) { $("status").textContent = "Greška: " + err.message; }
 };
 
 async function loadFromUrl(url) {
-  $("status").textContent = "Downloading...";
+  $("status").textContent = "Preuzimanje...";
   try {
     let u = url.trim();
     if (!/[?&]download=1/.test(u)) u += (u.includes("?") ? "&" : "?") + "download=1";
@@ -206,15 +226,15 @@ async function loadFromUrl(url) {
     loadWorkbook(new Uint8Array(await res.arrayBuffer()));
     store.set("url", url.trim());
   } catch(err) {
-    $("status").textContent = "Could not load link: " + err.message +
-      ". (If this happens in a browser it is usually CORS; in the Android app it works if the link allows anonymous access.)";
+    $("status").textContent = "Učitavanje sa linka nije uspelo: " + err.message +
+      ". (U pretraživaču je to obično CORS ograničenje; u Android aplikaciji radi ako link dozvoljava anoniman pristup.)";
   }
 }
 $("loadUrlBtn").onclick = () => { const u = $("urlInput").value; if (u) loadFromUrl(u); };
-$("refreshBtn").onclick = () => { const u = store.get("url", ""); if (u) loadFromUrl(u); else $("status").textContent = "No saved link yet."; };
+$("refreshBtn").onclick = () => { const u = store.get("url", ""); if (u) loadFromUrl(u); else $("status").textContent = "Nema sačuvanog linka."; };
 $("urlInput").value = store.get("url", "");
 
-// ---------- scanning ----------
+// ---------- skeniranje ----------
 function setResult(cls, big, mid, small) {
   const r = $("result");
   r.className = cls;
@@ -224,23 +244,36 @@ function setResult(cls, big, mid, small) {
   r.querySelector(".small").textContent = small || "";
 }
 
+function addUnknown(code) {
+  const t = nowStr();
+  const u = unknown.find(x => x.code === code);
+  if (u) { u.count++; u.last = t; }
+  else unknown.push({ code, count: 1, first: t, last: t });
+  store.set("unknown", unknown);
+  updateUnkTab();
+}
+function updateUnkTab() {
+  $("tab-unk").textContent = "Nepoznato" + (unknown.length ? " (" + unknown.length + ")" : "");
+}
+
 function onCode(code) {
   code = clean(code);
   const now = Date.now();
   if (code === lastCode && now - lastTime < 1500) return;
   lastCode = code; lastTime = now;
-  if (!orders.length) { setResult("bad", "No file loaded", "Go to the File tab"); beep(false); return; }
+  if (!orders.length) { setResult("bad", "Fajl nije učitan", "Idite na karticu Fajl"); beep(false); return; }
   const o = byNum.get(code) || byNum.get(keyOf(code));
   if (o) {
     const again = scanned[o.num];
     scanned[o.num] = true; store.set("scanned", scanned);
-    const extra = [];
+    const extra = ["Otpremnica: " + o.num];
     if (o.koleta > 1) extra.push("Koleta: " + o.koleta);
-    if (again) extra.push("already scanned");
-    setResult("ok", o.tour || "(no tour)", o.cust, o.num + (extra.length ? "  |  " + extra.join("  |  ") : ""));
+    if (again) extra.push("već skenirano");
+    setResult("ok", o.tour || "(bez ture)", o.cust, extra.join("  |  "));
     beep(true);
   } else {
-    setResult("bad", "NOT IN FILE", "", "Code: " + code);
+    addUnknown(code);
+    setResult("bad", "NIJE U FAJLU", "", "Sačuvano u kartici Nepoznato: " + code);
     beep(false);
   }
 }
@@ -254,7 +287,7 @@ async function startScanner() {
     $("startBtn").style.display = "none"; $("stopBtn").style.display = "block";
   } catch(e) {
     scanner = null;
-    setResult("bad", "Camera error", String(e));
+    setResult("bad", "Greška kamere", String(e));
   }
 }
 async function stopScanner() {
@@ -266,12 +299,12 @@ async function stopScanner() {
 $("startBtn").onclick = startScanner;
 $("stopBtn").onclick = stopScanner;
 
-// ---------- list ----------
+// ---------- lista ----------
 function renderList() {
   const q = $("filter").value.toLowerCase();
   const show = $("showFilter").value;
   const done = orders.filter(o => scanned[o.num]).length;
-  $("count").textContent = "Scanned " + done + " / " + orders.length;
+  $("count").textContent = "Skenirano " + done + " / " + orders.length;
   const box = $("rows"); box.innerHTML = "";
   orders
     .filter(o => show === "all" || (show === "done") === !!scanned[o.num])
@@ -280,7 +313,7 @@ function renderList() {
       const d = document.createElement("div");
       d.className = "row" + (scanned[o.num] ? " done" : "");
       d.innerHTML = '<div class="info"><div class="tour"></div><div class="cust"></div><div class="num"></div></div><span class="st"></span>';
-      d.querySelector(".tour").textContent = o.tour;
+      d.querySelector(".tour").textContent = "Tura: " + o.tour;
       d.querySelector(".cust").textContent = o.cust;
       d.querySelector(".num").textContent = o.num + (o.koleta > 1 ? "  |  Koleta: " + o.koleta : "");
       d.querySelector(".st").textContent = scanned[o.num] ? "✅" : "⬜";
@@ -290,8 +323,44 @@ function renderList() {
 $("filter").oninput = renderList;
 $("showFilter").onchange = renderList;
 $("resetBtn").onclick = () => {
-  if (confirm("Reset all scanned status?")) { scanned = {}; store.set("scanned", scanned); renderList(); }
+  if (confirm("Resetovati sve skenirane otpremnice?")) { scanned = {}; store.set("scanned", scanned); renderList(); }
 };
+
+// ---------- nepoznato ----------
+function renderUnknown() {
+  $("unkCount").textContent = "Nepoznati barkodovi: " + unknown.length;
+  const box = $("unkRows"); box.innerHTML = "";
+  if (!unknown.length) { box.textContent = "Još nema nepoznatih skeniranja."; return; }
+  unknown.slice().reverse().forEach(u => {
+    const d = document.createElement("div");
+    d.className = "row unk";
+    d.innerHTML = '<div class="info"><div class="tour"></div><div class="num"></div></div>';
+    d.querySelector(".tour").textContent = u.code;
+    d.querySelector(".num").textContent = "Skenirano " + u.count + "x  |  prvi put: " + u.first + "  |  poslednji put: " + u.last;
+    box.appendChild(d);
+  });
+}
+function unknownText(sep) {
+  const lines = [["Barkod", "Broj skeniranja", "Prvi put", "Poslednji put"].join(sep)];
+  unknown.forEach(u => lines.push([u.code, u.count, u.first, u.last].join(sep)));
+  return lines.join("\n");
+}
+$("copyBtn").onclick = async () => {
+  if (!unknown.length) return;
+  try { await navigator.clipboard.writeText(unknownText("\t")); alert("Lista je kopirana."); }
+  catch(e) { alert("Kopiranje nije uspelo. Koristite Preuzmi CSV."); }
+};
+$("csvBtn").onclick = () => {
+  if (!unknown.length) return;
+  const blob = new Blob(["﻿" + unknownText(";")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "nepoznato.csv";
+  document.body.appendChild(a); a.click(); a.remove();
+};
+$("unkClearBtn").onclick = () => {
+  if (confirm("Obrisati celu listu nepoznatih barkodova?")) { unknown = []; store.set("unknown", unknown); updateUnkTab(); renderUnknown(); }
+};
+updateUnkTab();
 </script>
 </body>
 </html>
